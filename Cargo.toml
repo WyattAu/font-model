@@ -33,13 +33,18 @@ serde = { version = "1", default-features = false, features = [
 ], optional = true }
 
 [features]
-default = []
-# std: needed only by the example binary (file I/O for the inventory dump).
-# The library itself is no_std + alloc.
+default = ["std"]
+# std: the library is no_std + alloc regardless; this enables the `std`
+# surface (currently the example's file I/O) and is what a host application
+# would take. `--no-default-features` builds the bare no_std library.
 std = []
 # Serde for the owned types, so a model round-trips through a config format.
 # Off by default: only callers that persist a model should pay for it.
 serde = ["dep:serde"]
+
+[[example]]
+name = "inventory"
+required-features = ["std"]
 
 [dev-dependencies]
 proptest = "1"
