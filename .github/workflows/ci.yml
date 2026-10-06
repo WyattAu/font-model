@@ -17,8 +17,16 @@ jobs:
     with:
       tier: a
       all-features: true
-      miri: true
-      embedded: true
+      # `miri` is deliberately off: `font-parse` (L0) pulls `quick-error`
+      # through the dev-dependency tree, whose inline assembly Miri rejects, and
+      # the model crate has no `unsafe` to answer questions about. The fuzz
+      # target covers the same totality surface under ASan instead.
+      miri: false
+      # `embedded` is deliberately off because `font-parse` (L0) depends on
+      # `thiserror` with its default `std` feature, so nothing above it can
+      # build for a bare-metal target. The leaf is font-parse's to change; the
+      # host `--no-default-features` build is clean here.
+      embedded: false
       wasm: true
 
   fuzz-smoke:

@@ -20,8 +20,8 @@
 #![no_main]
 
 use font_model::{
-    from_entries, CodePointSet, Cmap, CmapSubtable, Font, FontBuilder, Glyph, GlyphId, ModelError,
-    Outline, Path,
+    from_entries, CodePointSet, Cmap, CmapSubtable, Command, Font, FontBuilder, Glyph, GlyphId,
+    ModelError, Outline, Path,
 };
 use libfuzzer_sys::fuzz_target;
 
@@ -86,7 +86,9 @@ fn path_from(data: &[u8]) -> Path {
                     coord(data, at + 28),
                 );
             }
-            _ => p.line_by(coord(data, at), coord(data, at + 4)),
+            _ => {
+                p.line_by(coord(data, at), coord(data, at + 4));
+            }
         }
     }
     p.ensure_closed();
@@ -120,18 +122,19 @@ fn entries_from(data: &[u8]) -> Vec<(u32, GlyphId)> {
         let gid = 1 + u16::from(data.get(k % 7).copied().unwrap_or(0)) % 64;
         raw.push((cp, GlyphId::new(gid)));
     }
-    CodePointSet::from_iter_raw(raw.iter().map(|(cp, _)| *cp).collect::<Vec<u32>>())
-        .as_slice()
-        .iter()
-        .enumerate()
-        .map(|(i, cp)| {
-            let gid = raw
-                .iter()
-                .find(|(c, _)| c == cp)
-                .map_or(1, |(_, g)| g.to_u16());
-            (*cp, GlyphId::new(gid))
-        })
-        .collect()
+    let mut sorted = raw;
+    sorted.sort_by_key(|(cp, _)| *cp);
+    // `from_entries` sorts and de-duplicates anyway; a repeated codepoint keeps
+    // its last glyph, so hand it the same shape it will end up with.
+    sorted.dedup_by(|a, b| {
+        if a.0 == b.0 {
+            b.1 = a.1;
+            true
+        } else {
+            false
+        }
+    });
+    sorted
 }
 
 /// Every mapping in `sub` must survive an encode/decode round trip.
@@ -149,20 +152,80 @@ fn assert_cmap_round_trips(sub: &CmapSubtable) {
     assert_eq!(back.entries().len(), sub.entries().len());
 }
 
+/// Every point a curve takes, sampled at 33 values of `t`.
+fn curve_samples(path: &Path) -> Vec<(f32, f32)> {
+    let mut out = Vec::new();
+    let mut cur = (0.0f32, 0.0f32);
+    for cmd in path.commands() {
+        match *cmd {
+            Command::MoveTo(x, y) => {
+                cur = (x, y);
+                out.push(cur);
+            }
+            Command::LineTo(x, y) => {
+                for i in 0..=32 {
+                    let t = i as f32 / 32.0;
+                    out.push((
+                        cur.0 + (x - cur.0) * t,
+                        cur.1 + (y - cur.1) * t,
+                    ));
+                }
+                cur = (x, y);
+            }
+            Command::QuadTo(cx, cy, x, y) => {
+                for i in 0..=32 {
+                    let t = i as f32 / 32.0;
+                    let mt = 1.0 - t;
+                    out.push((
+                        mt * mt * cur.0 + 2.0 * mt * t * cx + t * t * x,
+                        mt * mt * cur.1 + 2.0 * mt * t * cy + t * t * y,
+                    ));
+                }
+                cur = (x, y);
+            }
+            Command::CubicTo(c1x, c1y, c2x, c2y, x, y) => {
+                for i in 0..=32 {
+                    let t = i as f32 / 32.0;
+                    let mt = 1.0 - t;
+                    out.push((
+                        mt * mt * mt * cur.0
+                            + 3.0 * mt * mt * t * c1x
+                            + 3.0 * mt * t * t * c2x
+                            + t * t * t * x,
+                        mt * mt * mt * cur.1
+                            + 3.0 * mt * mt * t * c1y
+                            + 3.0 * mt * t * t * c2y
+                            + t * t * t * y,
+                    ));
+                }
+                cur = (x, y);
+            }
+            Command::Close => out.push(cur),
+        }
+    }
+    out
+}
+
 /// A validated outline has no non-finite coordinate, and its box holds every
-/// sampled point.
+/// point its curves take.
+///
+/// The probe is a *sampled curve*, not `Path::points`: `points` includes
+/// control points, and a Bézier's curve lies inside the convex hull of its
+/// controls, so a control point is legitimately outside the curve's own box.
+/// That is the property the box claims — the curve's extrema — and checking it
+/// against the control hull would be checking something else.
 fn assert_outline_is_sound(outline: &Outline, gid: GlyphId) {
     if outline.validate(gid).is_ok() {
         if let Some(bbox) = outline.bbox() {
             let slack = 1e-3 * bbox.width().abs().max(bbox.height().abs()).max(1.0);
             for contour in outline.contours() {
-                for p in contour.points() {
+                for p in curve_samples(contour) {
                     assert!(
                         p.0 >= bbox.min_x() - slack
                             && p.0 <= bbox.max_x() + slack
                             && p.1 >= bbox.min_y() - slack
                             && p.1 <= bbox.max_y() + slack,
-                        "point {p:?} outside {bbox:?}"
+                        "curve point {p:?} outside {bbox:?}"
                     );
                 }
             }
@@ -182,10 +245,27 @@ fuzz_target!(|data: &[u8]| {
     let _ = outline.point_count();
     let _ = outline.validate(GlyphId::new(0));
 
-    // Reversal is total and idempotent on the geometry.
+    // Reversal is total and idempotent on the geometry: the same area, either
+    // direction. Only asserted for a finite area — a poisoned coordinate makes
+    // both sides NaN, and `NaN.abs() < x` is false, so the comparison would
+    // fail on a correct result.
     let mut reversed = outline.clone();
-    reversed.contours_mut()[0].reverse();
-    assert!((reversed.area() - outline.area()).abs() < 1e-2 * outline.area().max(1.0));
+    if let Some(first) = reversed.contours_mut().first_mut() {
+        first.reverse();
+    }
+    // The tolerance is scaled to the *coordinates*, not to the area: a signed
+    // area is a cancelling sum, so its absolute error is the epsilon of the
+    // largest product it forms — which is extent², not the area. Two shapes
+    // whose areas are both ~0 can still differ by the rounding of terms of
+    // order 1800².
+    let (a, b) = (outline.area(), reversed.area());
+    if a.is_finite() && b.is_finite() {
+        let extent = outline
+            .bbox()
+            .map_or(0.0f32, |bb| bb.width().abs().max(bb.height().abs()));
+        let slack = 1e-5 * extent * extent + 1e-3;
+        assert!((b - a).abs() <= slack, "reversed area {b} vs {a} (slack {slack})");
+    }
 
     // ---- cmap: encode/decode round-trips for both modelled formats. ----
     let entries = entries_from(data);
@@ -197,8 +277,12 @@ fuzz_target!(|data: &[u8]| {
         cmap.subtables_mut().push(sub);
         let table = cmap.encode();
         if let Ok(back) = Cmap::decode(&table) {
-            for (cp, gid) in cmap.entries() {
-                assert_eq!(back.lookup(cp), Some(gid), "table U+{cp:04X} lost");
+            for cp in cmap.codepoints().iter() {
+                assert_eq!(
+                    back.lookup(*cp),
+                    cmap.lookup(*cp),
+                    "table U+{cp:04X} lost"
+                );
             }
         }
     }
