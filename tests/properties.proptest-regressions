@@ -1,0 +1,12 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 85f8f4cbef28c994db260a9802f97da756777e959c657961b3b00787d3367c18 # shrinks to points = [(0.0, 0.0), (0.0, 0.0), (0.0, 353.23495), (-188.96648, 0.0)]
+cc 0bdce701c7c36e04bde53883901b37343c2cf3849bb7df99acb87980c770d3f5 # shrinks to commands = [LineTo(0.0, 705.941), LineTo(0.0, -735.6227)]
+cc f52009dcbf59d510dad72d279c26f3ee66fd0327755b4e4be570f5176773bd14 # shrinks to cps = [0, 1, 2, 3, 4, 5], gids = [GlyphId(0)]
+cc d48b0f4868e9ae568b83f109b3c1a0990c97b6c81b37751e850eaa3f17dbc14a # shrinks to cps = [0, 1], gids = []
+cc 3bb442ec220ae7cc197af2b7f51e2b397695da09454a7355353be503de89ac8e # shrinks to cps = [65535], gids = [GlyphId(1)]
+cc 96065701b775c2e90001a4bd2423a2da8f7cc153ae19e15568ebd0af62f29132 # shrinks to points = [(467.99487, 415.729), (-80.33355, 246.62361), (-394.63248, -214.04123), (126.25008, 432.6543), (432.2577, -201.0906), (187.01958, 305.71567), (-72.02673, 245.73448)]

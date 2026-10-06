@@ -1,0 +1,21 @@
+[package]
+name = "font-model-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.font-model]
+path = ".."
+
+[[bin]]
+name = "font_model_fuzz"
+path = "fuzz_targets/font_model_fuzz.rs"
+test = false
+doc = false
+bench = false

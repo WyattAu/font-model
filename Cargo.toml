@@ -1,0 +1,68 @@
+[package]
+name = "font-model"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+authors = ["Wyatt Au <wyatt_au@protonmail.com>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/WyattAu/font-model"
+homepage = "https://github.com/WyattAu/font-model"
+documentation = "https://docs.rs/font-model"
+description = "Editable in-memory font model — glyph outlines, cmap formats 4 and 12, metrics, validation, subsetting"
+readme = "README.md"
+keywords = ["font", "ttf", "typography", "cmap", "no-std"]
+categories = ["data-structures", "no-std", "text-processing"]
+exclude = [".github/", "fuzz/", "supply-chain/"]
+
+# Layer model: docs/layers.md in WyattAu/engineering-standards.
+# L1 — substrate: the typed, owned, editable font model that sits directly on
+# font-parse's L0 byte-level views. L1 on L0 is the legal direction.
+[package.metadata.layers]
+tier = "L1"
+
+# font-parse (L0) supplies the zero-copy table views this model is built from;
+# thiserror carries the typed error taxonomy (font-parse's own precedent).
+# serde is optional and off by default: only callers that want to persist a
+# model in a config format should pay for it.
+[dependencies]
+font-parse = { version = "0.1", default-features = false }
+thiserror = { version = "2", default-features = false }
+serde = { version = "1", default-features = false, features = [
+  "alloc",
+  "derive",
+], optional = true }
+
+[features]
+default = []
+# std: needed only by the example binary (file I/O for the inventory dump).
+# The library itself is no_std + alloc.
+std = []
+# Serde for the owned types, so a model round-trips through a config format.
+# Off by default: only callers that persist a model should pay for it.
+serde = ["dep:serde"]
+
+[dev-dependencies]
+proptest = "1"
+serde_json = "1"
+
+[lints.rust]
+missing_docs = "deny"
+unsafe_code = "deny"
+
+# Model discipline (mirrors font-parse / can-core): a model is assembled from
+# untrusted font bytes and then edited by an untrusted caller. Every field is
+# range-checked, every fallible path returns a typed ModelError naming the
+# offending glyph and field, and nothing panics. The lib target holds these
+# deny-level lints; the test, example, and fuzz targets lift them at the file
+# level with justification (assertions need them by design).
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+undocumented_unsafe_blocks = "deny"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = true
