@@ -1,6 +1,6 @@
 [package]
 name = "font-model"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 rust-version = "1.85"
 authors = ["Wyatt Au <wyatt_au@protonmail.com>"]
@@ -8,7 +8,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/WyattAu/font-model"
 homepage = "https://github.com/WyattAu/font-model"
 documentation = "https://docs.rs/font-model"
-description = "Editable in-memory font model — glyph outlines, cmap formats 4 and 12, metrics, validation, subsetting"
+description = "Editable in-memory font model: glyph outlines, cmap formats 4 and 12, metrics, validation, and subsetting"
 readme = "README.md"
 keywords = ["font", "ttf", "typography", "cmap", "no-std"]
 categories = ["data-structures", "no-std", "text-processing"]
